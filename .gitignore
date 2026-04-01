@@ -1,0 +1,23 @@
+# SQLite Databases
+*.db
+*.sqlite
+*.sqlite3
+ecommerce.db
+
+# Generated CSV Reports
+*.csv
+price_change_report_*.csv
+
+# Python Cache and Compiled Files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environments (if you use one later)
+venv/
+.venv/
+env/
+.env
+
+# Playwright/Browser artifacts (just in case)
+.playwright/
