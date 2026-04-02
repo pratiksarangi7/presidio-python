@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>WebSocket Chat</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            gap: 20px;
+            padding: 20px;
+        }
+
+        #chat-section {
+            flex-grow: 1;
+            border: 1px solid #ccc;
+            padding: 10px;
+            height: 400px;
+            overflow-y: scroll;
+        }
+
+        #sidebar {
+            width: 200px;
+            border: 1px solid #ccc;
+            padding: 10px;
+        }
+
+        .typing {
+            font-style: italic;
+            color: gray;
+            font-size: 0.9em;
+        }
+
+        .online {
+            color: green;
+        }
+
+        .offline {
+            color: red;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="setup">
+        <input type="text" id="username" placeholder="Username">
+        <input type="text" id="room" placeholder="Room Name">
+        <button onclick="connect()">Connect & Join</button>
+    </div>
+
+    <div id="sidebar" style="display:none;">
+        <h3>Presence</h3>
+        <ul id="presence-list"></ul>
+    </div>
+
+    <div id="main" style="display:none; flex-grow: 1;">
+        <h3 id="room-title"></h3>
+        <div id="chat-section"></div>
+        <div id="typing-indicator" class="typing"></div>
+        <input type="text" id="message" placeholder="Type a message..." oninput="sendTyping()"
+            onkeypress="handleEnter(event)">
+        <button onclick="sendMessage()">Send</button>
+        <hr>
+        <h4>Private Message</h4>
+        <input type="text" id="dm-user" placeholder="Target Username">
+        <input type="text" id="dm-message" placeholder="Private message...">
+        <button onclick="sendPrivateMessage()">Send DM</button>
+    </div>
+
+    <script>
+        let ws;
+        let currentUser;
+        let currentRoom;
+        let typingTimeout;
+
+        async function connect() {
+            currentUser = document.getElementById("username").value;
+            currentRoom = document.getElementById("room").value;
+
+            if (!currentUser || !currentRoom) return alert("Enter username and room");
+
+            // Fetch History
+            const response = await fetch(`/history/${currentRoom}`);
+            const history = await response.json();
+            const chat = document.getElementById("chat-section");
+            history.forEach(msg => {
+                chat.innerHTML += `<div><strong>${msg.sender}:</strong> ${msg.content}</div>`;
+            });
+
+            ws = new WebSocket(`ws://localhost:8000/ws/${currentUser}`);
+
+            ws.onopen = () => {
+                document.getElementById("setup").style.display = "none";
+                document.getElementById("sidebar").style.display = "block";
+                document.getElementById("main").style.display = "block";
+                document.getElementById("room-title").innerText = `Room: ${currentRoom}`;
+
+                ws.send(JSON.stringify({ type: "join", room: currentRoom }));
+            };
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+
+                if (data.type === "chat") {
+                    chat.innerHTML += `<div><strong>${data.sender}:</strong> ${data.content}</div>`;
+                    chat.scrollTop = chat.scrollHeight;
+                    document.getElementById("typing-indicator").innerText = "";
+                }
+                else if (data.type === "private") {
+                    chat.innerHTML += `<div style="color: purple;"><strong>[DM from ${data.sender}]:</strong> ${data.content}</div>`;
+                    chat.scrollTop = chat.scrollHeight;
+                }
+                else if (data.type === "presence") {
+                    updatePresence(data.data);
+                }
+                else if (data.type === "typing" && data.sender !== currentUser) {
+                    const indicator = document.getElementById("typing-indicator");
+                    indicator.innerText = `${data.sender} is typing...`;
+                    clearTimeout(typingTimeout);
+                    typingTimeout = setTimeout(() => indicator.innerText = "", 2000);
+                }
+            };
+        }
+
+        function updatePresence(users) {
+            const list = document.getElementById("presence-list");
+            list.innerHTML = "";
+            for (const [user, status] of Object.entries(users)) {
+                list.innerHTML += `<li class="${status}">${user} (${status})</li>`;
+            }
+        }
+
+        function sendMessage() {
+            const input = document.getElementById("message");
+            if (input.value && ws) {
+                ws.send(JSON.stringify({ type: "chat", room: currentRoom, content: input.value }));
+                input.value = "";
+            }
+        }
+
+        function sendPrivateMessage() {
+            const target = document.getElementById("dm-user").value;
+            const content = document.getElementById("dm-message").value;
+            if (target && content && ws) {
+                ws.send(JSON.stringify({ type: "private", receiver: target, content: content }));
+                document.getElementById("dm-message").value = "";
+            }
+        }
+
+        function sendTyping() {
+            if (ws) ws.send(JSON.stringify({ type: "typing", room: currentRoom }));
+        }
+
+        function handleEnter(e) {
+            if (e.key === "Enter") sendMessage();
+        }
+    </script>
+</body>
+
+</html>
