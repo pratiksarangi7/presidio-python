@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real-Time IoT Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 20px;
+            background-color: #f8fafc;
+            color: #334155;
+        }
+
+        h2 {
+            text-align: center;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .charts {
+            display: flex;
+            gap: 20px;
+        }
+
+        .chart-box {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+            flex: 1;
+        }
+
+        .alerts {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+            height: 250px;
+            overflow-y: auto;
+            border: 1px solid #e2e8f0;
+        }
+
+        .alert-item {
+            padding: 12px;
+            margin-bottom: 8px;
+            border-left: 4px solid #ef4444;
+            background: #fef2f2;
+            border-radius: 0 4px 4px 0;
+            font-size: 0.9em;
+        }
+
+        .timestamp {
+            font-weight: bold;
+            color: #b91c1c;
+        }
+    </style>
+</head>
+
+<body>
+    <h2>Real-Time Streaming Dashboard</h2>
+    <div class="container">
+        <div class="charts">
+            <div class="chart-box">
+                <canvas id="tempChart"></canvas>
+            </div>
+            <div class="chart-box">
+                <canvas id="vibChart"></canvas>
+            </div>
+        </div>
+        <div class="alerts">
+            <h3>Alert Log (Anomaly Detected)</h3>
+            <div id="alertBox"></div>
+        </div>
+    </div>
+
+    <script>
+        // Keep the last 60 seconds of data on the UI
+        const maxDataPoints = 60;
+
+        // Initialize Chart.js configuration
+        const createChart = (ctxId, label, color) => {
+            const ctx = document.getElementById(ctxId).getContext('2d');
+            return new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        { label: `${label} (Raw)`, borderColor: color, data: [], fill: false, tension: 0.1 },
+                        { label: '5-Min Moving Avg', borderColor: '#94a3b8', borderDash: [5, 5], data: [], fill: false, pointRadius: 0 }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    animation: false,
+                    scales: { x: { display: true }, y: { display: true } }
+                }
+            });
+        };
+
+        const tempChart = createChart('tempChart', 'Temperature', '#f97316');
+        const vibChart = createChart('vibChart', 'Vibration', '#3b82f6');
+        const alertBox = document.getElementById('alertBox');
+
+        // Connect to WebSocket endpoint
+        const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+        const ws = new WebSocket(`${protocol}://${window.location.host}/ws`);
+
+        ws.onmessage = function (event) {
+            const data = JSON.parse(event.data);
+            const time = data.timestamp;
+            const temp = data.sensors.temperature;
+            const vib = data.sensors.vibration;
+
+            // Helper function to update charts
+            const updateChart = (chart, valueData) => {
+                if (chart.data.labels.length > maxDataPoints) {
+                    chart.data.labels.shift();
+                    chart.data.datasets[0].data.shift();
+                    chart.data.datasets[1].data.shift();
+                }
+                chart.data.labels.push(time);
+                chart.data.datasets[0].data.push(valueData.value);
+                chart.data.datasets[1].data.push(valueData.moving_average);
+                chart.update();
+            };
+
+            updateChart(tempChart, temp);
+            updateChart(vibChart, vib);
+
+            // Handle Alerts
+            [{ name: 'Temperature', data: temp }, { name: 'Vibration', data: vib }].forEach(sensor => {
+                if (sensor.data.is_anomaly) {
+                    const alertDiv = document.createElement('div');
+                    alertDiv.className = 'alert-item';
+                    alertDiv.innerHTML = `<span class="timestamp">[${time}]</span> High ${sensor.name} anomaly detected! Value: ${sensor.data.value} (Z-Score: ${sensor.data.z_score})`;
+                    alertBox.prepend(alertDiv);
+                }
+            });
+        };
+    </script>
+</body>
+
+</html>

@@ -21,3 +21,4 @@ env/
 
 # Playwright/Browser artifacts (just in case)
 .playwright/
+plugins/
